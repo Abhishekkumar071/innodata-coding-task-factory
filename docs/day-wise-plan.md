@@ -1,8 +1,11 @@
 # Day-Wise Plan & Team Workflow (25 Nov – 6 Dec 2026)
 
-**Submission Deadline:** 6 December 2026 · 11:59 PM IST  
+**Submission Deadline:** 6 December 2026 · 11:55 PM IST  
 **AMA Session Checkpoint:** 2 December 2026  
-**Grand Finale:** 20 December 2026
+**Evaluation & Screening:** 7–14 December 2026  
+**Mentor Connect:** 15 December 2026  
+**Finalist Demo Day:** 20 December 2026  
+**Grand Finale:** 23 December 2026
 
 ---
 
@@ -76,4 +79,4 @@ Each member shares exactly 3 points:
 | **Day 9 (3 Dec)** | **Fresh Pipeline Run & Evidence Harvest:** Generate 5–8 clean Harbor tasks from `pallets/click`, run Harbor `nop` + `oracle` + mutation tests on all, and archive verified outputs under `artifacts/tasks/` and `artifacts/validation_evidence/`. *(Stretch if smooth: run 1 external AI solver inside Harbor to record Pass@1 benchmark evidence!)* |
 | **Day 10 (4 Dec)** | **Clean-Environment Verification:** Run full setup from scratch following `README.md` inside Docker/fresh clone. Fix any missing dependency, path issue, or flaky test. Merge final stable code `dev` $\rightarrow$ `main`. |
 | **Day 11 (5 Dec)** | **Final Freeze & Docs:** Complete `docs/TECHNICAL_EXPLANATION.md` (with exact metrics, models declared, failure cases & fixes), verify all 5 submission deliverables, and record the **end-to-end Walkthrough Video Demo** (CLI + Harbor runs + UI dashboard). |
-| **Day 12 (6 Dec)** | **Final QA & Submit (Before 6 PM IST buffer for 11:59 PM deadline):** Verify all repo files, sample outputs, validation logs, technical PDF/markdown, and video link on Hack2skill Participant Dashboard. |
+| **Day 12 (6 Dec)** | **Final QA & Submit (Before 6 PM IST buffer for 11:55 PM deadline):** Verify all repo files, sample outputs, validation logs, technical PDF/markdown, presentation deck, and video link on Hack2skill Participant Dashboard. |

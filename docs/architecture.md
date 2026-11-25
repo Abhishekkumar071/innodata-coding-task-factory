@@ -44,13 +44,13 @@ flowchart TD
 ### 3.2 `task_factory/variation_engine.py` — 5-Axis Variation Strategy
 To guarantee **5 substantively different tasks** (never reworded duplicates), generation is anchored to **5 orthogonal architectural axes** of `pallets/click`:
 
-| Axis ID | Target `click` Subsystem | Example Feature Category (Illustrative Only) | Behaviour Changed |
-| :---: | :--- | :--- | :--- |
-| **Axis 1** | **Parameter & Type System** (`types.py`, `core.py`) | New parameter validation/constraint rules or type coercion modes | Input parsing, validation errors, value normalization |
-| **Axis 2** | **Command & Group Routing** (`core.py`, `decorators.py`) | Command dispatch, option-group rules, deprecation/alias policies, or lifecycle hooks | Invocation flow, resolution order, callback execution |
-| **Axis 3** | **Help & Terminal Formatting** (`formatting.py`, `termui.py`) | Structured help output customization, usage wrapping, or rich terminal helpers | Rendered stdout/stderr formatting & help sections |
-| **Axis 4** | **Context, EnvVar & Config Resolution** (`core.py`, `globals.py`) | Precedence rules, dynamic defaults, or context propagation mechanisms | Value-source priority (CLI vs env vs default map) |
-| **Axis 5** | **Testing & Shell Integration** (`testing.py`, `shell_completion.py`) | Enhanced `CliRunner` isolation/assertions or shell completion behaviour | Test harness APIs or completion script generation |
+| Axis ID | Canonical Slug | Target `click` Subsystem | Example Feature Category (Illustrative Only) | Behaviour Changed |
+| :---: | :--- | :--- | :--- | :--- |
+| **Axis 1** | `parameter-validation` | **Parameter & Type System** (`types.py`, `core.py`) | New parameter validation/constraint rules or type coercion modes | Input parsing, validation errors, value normalization |
+| **Axis 2** | `command-routing` | **Command & Group Routing** (`core.py`, `decorators.py`) | Command dispatch, option-group rules, deprecation/alias policies, or lifecycle hooks | Invocation flow, resolution order, callback execution |
+| **Axis 3** | `formatting-termui` | **Help & Terminal Formatting** (`formatting.py`, `termui.py`) | Structured help output customization, usage wrapping, or rich terminal helpers | Rendered stdout/stderr formatting & help sections |
+| **Axis 4** | `context-envvar` | **Context, EnvVar & Config Resolution** (`core.py`, `globals.py`) | Precedence rules, dynamic defaults, or context propagation mechanisms | Value-source priority (CLI vs env vs default map) |
+| **Axis 5** | `testing-completion` | **Testing & Shell Integration** (`testing.py`, `shell_completion.py`) | Enhanced `CliRunner` isolation/assertions or shell completion behaviour | Test harness APIs or completion script generation |
 
 **Anti-Duplication & Scope Guards:**
 - Rejects any proposal containing bug-fix language (*"fix crash", "resolve regression", "handle broken edge case"*).
@@ -78,7 +78,7 @@ Translates a verified blueprint into a standalone Harbor folder (`artifacts/task
 
 ### 3.5 `task_factory/harbor_runner.py` & `mutation_tester.py` — Official Validation Gate
 - Executes both official Harbor CLI commands (`nop` and `oracle`), parses `/logs/verifier/reward.txt` and trial metadata, and archives full trial logs under `artifacts/validation_evidence/<task-id>/`.
-- **Mutation Tester:** Generates 2–3 controlled mutants per task (e.g., inverting a conditional branch, returning default early, omitting validation error) and verifies `reward < 1.0`, proving the test suite actively detects incorrect implementations.
+- **Mutation Tester `[P1 — see goodtohave.md]`:** Generates 2–3 controlled AST mutants per task (e.g., inverting a conditional branch, returning default early, omitting validation error) and verifies `reward < 1.0`, proving the test suite actively detects incorrect implementations.
 
 ---
 
@@ -99,10 +99,10 @@ flowchart LR
 - **`validations`**: `id`, `task_id`, `mode` (`nop|oracle|mutant`), `reward` (`float|null`), `passed_feature`, `total_feature`, `passed_regression`, `total_regression`, `duration_sec`, `log_path`, `created_at`
 
 ### Core API Endpoints
-- `POST /api/runs` — Start a new generation run (`count`, `axes`, `base_commit`, `run_harbor`, `run_mutations`)
+- `POST /api/runs` — Start a new generation run (`repo`, `base_commit`, `count`, optional `axes`, `run_harbor`, optional `[P1]` `run_mutations`)
 - `GET /api/runs/{run_id}` — Run status and summary metrics
 - `GET /api/runs/{run_id}/events` — SSE live log & pipeline stage updates
 - `GET /api/tasks` & `GET /api/tasks/{task_id}` — Full task package inspector (`instruction.md`, `task.toml`, diffs, test lists)
 - `POST /api/tasks/{task_id}/validate` — Trigger official Harbor `nop` + `oracle` checks
-- `POST /api/tasks/{task_id}/mutate` — Trigger mutation tests and return kill rate
+- `POST /api/tasks/{task_id}/mutate` `[P1]` — Trigger mutation tests and return kill rate
 - `GET /api/tasks/{task_id}/export` — Download zipped Harbor task folder

@@ -69,7 +69,13 @@ Harbor evaluates each task inside an isolated Docker container through two manda
 
 ## 5. Submission Deliverables & Judging Focus
 
-Submission Deadline: **6 December 2026 · 11:59 PM IST** (AMA Session: **2 December 2026**, Grand Finale: **20 December 2026**).
+Submission Deadline: **6 December 2026 · 11:55 PM IST**  
+Key Milestones: AMA Session (**2 Dec 2026**), Evaluation & Screening (**7–14 Dec 2026**), Mentor Connect (**15 Dec 2026**), Finalist Demo Day (**20 Dec 2026**), Grand Finale (**23 Dec 2026**).
+
+### Official Hackathon Resources
+- **Submission Deck Template:** [Google Slides](https://docs.google.com/presentation/d/1fXZJ86GvJ-UnR4C7CkeWoTnzNqC7-gznV7efty8Su50/edit)
+- **Detailed Participant Guide & Specs:** [Google Docs](https://docs.google.com/document/d/1dk_C057AJFQsL5UzmNZ1YoQB7AWSml7go0NUrX-UrCM/edit)
+- **Harbor Evaluation Framework:** [harborframework.com](https://www.harborframework.com/)
 
 Required deliverables:
 1. **Runnable Source Code:** Clean repo with automated Docker/CLI setup and execution instructions.

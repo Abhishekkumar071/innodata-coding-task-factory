@@ -142,13 +142,13 @@ Harbor runs `/tests/test.sh` inside the container after the agent (`nop`, `oracl
 
 **Mandatory Contract:**
 1. Copy feature test file(s) from `/tests/test_feature_*.py` into `/app/tests/`.
-2. Execute `fail_to_pass` tests and `pass_to_pass` tests cleanly (using `pytest --junitxml=...` or JSON/Python runner to evaluate exact node IDs without crashing early on exit code `1`).
-3. Compute reward strictly according to the Participant Guide specification:
-   - If **any** test in `pass_to_pass.json` fails or errors $\rightarrow$ `reward = 0.0`
+2. Execute `pytest` with `--junitxml=/tmp/junit.xml` covering all `/tests/fail_to_pass.json` and `/tests/pass_to_pass.json` node IDs. **Always capture `pytest`'s exit status without letting `set -e` abort** (`pytest ... --junitxml=/tmp/junit.xml || true`), because `fail_to_pass` tests are expected to fail under `nop`.
+3. Parse `/tmp/junit.xml` against `/tests/fail_to_pass.json` and `/tests/pass_to_pass.json` using Python stdlib (`xml.etree.ElementTree` + `json` — zero extra pip dependencies needed inside Docker) and compute reward strictly according to the Participant Guide specification:
+   - If **any** test in `pass_to_pass.json` fails, errors, or is missing/skipped unexpectedly $\rightarrow$ `reward = 0.0`
    - Else if **all** tests in `fail_to_pass.json` pass $\rightarrow$ `reward = 1.0`
    - Else $\rightarrow$ `reward = passed_fail_to_pass / total_fail_to_pass`
 4. Write the single floating-point value to `/logs/verifier/reward.txt` (creating `/logs/verifier` if needed) AND save a structured breakdown `/logs/verifier/verifier_summary.json` for validation evidence!
-5. Always exit `0` after writing `/logs/verifier/reward.txt` (unless a genuine environment crash occurs), so Harbor does not report `null` reward on expected `nop` test failures!
+5. Always exit `0` after writing `/logs/verifier/reward.txt` (unless a genuine environment crash prevents running `pytest`), so Harbor does not report `null` reward on expected `nop` test failures!
 
 ---
 
