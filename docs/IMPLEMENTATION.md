@@ -22,10 +22,12 @@ This guide defines the tech stack, folder ownership, Day-1 environment setup, da
 
 ```text
 innodata-coding-task-factory/
+├── AGENTS.md                        # [Abhishek] Central engineering & AI agent rules
 ├── README.md
+├── .gitignore                       # [Abhishek] Ignore .venv, .env, *.db, node_modules, _tmp_*
 ├── .gitattributes                   # [Abhishek] Enforce LF for *.sh
 ├── .env.example                     # [Abhishek] API keys & config template
-├── pyproject.toml                   # [Abhishek + Mrityunjay] Python deps, pytest, ruff
+├── pyproject.toml                   # [Abhishek + Mrityunjay] Editable packages (task_factory*, backend*), ruff, pytest
 ├── docker-compose.yml               # [Abhishek] Standardized execution container
 ├── .github/workflows/ci.yml         # [Abhishek] PR CI (ruff + pytest + frontend build)
 │
@@ -35,8 +37,8 @@ innodata-coding-task-factory/
 │   ├── __init__.py
 │   ├── __main__.py                  # [Mrityunjay] Enables `python -m task_factory`
 │   ├── cli.py                       # [Mrityunjay] Typer/Click/argparse CLI (`generate`, `validate`, `mutate`)
-│   ├── config.py                    # [Abhishek] Settings, paths, pinned repo URL & base_commit
-│   ├── schemas.py                   # [Abhishek] Shared Pydantic contracts (TaskBlueprint, ValidationResult)
+│   ├── config.py                    # [Abhishek] Settings, env vars, pinned repo URL & base_commit
+│   ├── schemas.py                   # [Abhishek] Shared Pydantic contracts (FeatureBlueprint, SynthesizedTask, PrecheckResult, ValidationOutcome)
 │   ├── repo_analyzer.py             # [Alok] Clone/checkout, AST module/class map, pytest collection
 │   ├── variation_engine.py          # [Alok] 5-axis feature ideation, upstream guard, dedup filter
 │   ├── synthesizer.py               # [Alok] instruction.md, solution.patch, test_feature.py, self-repair
@@ -146,7 +148,25 @@ class ValidationOutcome(BaseModel):
     total_regression: int
     duration_sec: float
     log_path: str
+
+class PrecheckResult(BaseModel):
+    task_id: str
+    patch_applies: bool
+    fail_to_pass: list[str]          # Collected deterministically via pytest --collect-only
+    base_feature_failed: bool        # True when all fail_to_pass tests fail on unpatched base_commit
+    oracle_passed: bool              # True when all fail_to_pass + pass_to_pass pass after patch
+    error_summary: str = ""          # Truncated pytest/git stderr fed into Alok's self-repair loop
 ```
+
+### Canonical Config & Module Boundaries
+- **Central Env Vars (`task_factory/config.py`):** `CLICK_REPO_URL` (default `https://github.com/pallets/click.git`), `CLICK_BASE_COMMIT` (pinned 40-char SHA), `LLM_PROVIDER` (`gemini|openai`), `LLM_MODEL`, `GEMINI_API_KEY` / `OPENAI_API_KEY`, `ARTIFACTS_DIR` (default `artifacts`), `DB_PATH` (default `artifacts/factory.db`), `HARBOR_TIMEOUT_SEC` (default `300`).
+- **Pipeline Handshake:**
+  1. `repo_analyzer.analyze_repo(...)` returns AST summary + baseline `pass_to_pass` node IDs.
+  2. `variation_engine.propose_blueprints(...)` returns `list[FeatureBlueprint]`.
+  3. `synthesizer.synthesize_task(...)` generates `instruction_md`, `solution_patch`, `feature_test_code` and calls `sandbox_precheck.verify_in_worktree(...) -> PrecheckResult` during self-repair (up to 3 retries), returning `SynthesizedTask` with `fail_to_pass` collected from `PrecheckResult`.
+  4. `harbor_writer.write_task_package(task: SynthesizedTask, ...)` writes `artifacts/tasks/<task_id>/`.
+  5. `harbor_runner.run_harbor_validation(task_dir, ...)` executes `nop` and `oracle` and returns `list[ValidationOutcome]`.
+- **Packaging & CORS:** Configure `pyproject.toml` (`[tool.setuptools.packages.find]` including `task_factory*` and `backend*`) so `pip install -e .` resolves imports cleanly across CLI, `backend/`, and `tests/`. Enable FastAPI `CORSMiddleware` for `http://localhost:5173` during local Vite dev.
 
 ---
 
@@ -155,14 +175,22 @@ class ValidationOutcome(BaseModel):
 Subhasree can mock the frontend on Day 1 using these exact payloads while Mrityunjay builds `backend/main.py`:
 
 - **`POST /api/runs`**
-  - Request: `{"repo": "pallets/click", "base_commit": "<40-char-sha>", "count": 5, "run_harbor": true, "run_mutations": true}`
+  - Request: `{"repo": "pallets/click", "base_commit": "<40-char-sha>", "count": 5, "axes": ["parameter-validation", "command-routing", "formatting-termui", "context-envvar", "testing-completion"], "run_harbor": true, "run_mutations": false}` *(Note: `axes` is optional, defaulting to all 5; `run_mutations` is `[P1]`)*
   - Response: `{"run_id": "run_20261125_01", "status": "queued"}`
+- **`GET /api/runs/{run_id}`**
+  - Response: `{"run_id": "...", "repo": "pallets/click", "base_commit": "...", "status": "queued|running|completed|failed", "tasks_generated": 5, "created_at": "...", "completed_at": null}`
 - **`GET /api/runs/{run_id}/events`** (SSE `text/event-stream`)
   - Events: `{"stage": "analyze|ideate|synthesize|precheck|harbor_nop|harbor_oracle|mutate", "task_id": "...", "message": "...", "timestamp": "..."}`
 - **`GET /api/tasks`**
   - Response: List of task summaries (`task_id`, `axis`, `title`, `difficulty`, `repair_attempts`, `nop_reward`, `oracle_reward`, `mutation_killed`, `mutation_total`).
 - **`GET /api/tasks/{task_id}`**
   - Response: Full inspector payload (`task_toml`, `instruction_md`, `solution_patch`, `feature_test_code`, `fail_to_pass`, `pass_to_pass`, `validations[]`, `package_path`).
+- **`POST /api/tasks/{task_id}/validate`**
+  - Triggers Harbor `nop` + `oracle` checks; returns `list[ValidationOutcome]`.
+- **`POST /api/tasks/{task_id}/mutate`** **`[P1]`**
+  - Triggers AST mutation checks; returns `list[ValidationOutcome]`.
+- **`GET /api/tasks/{task_id}/export`**
+  - Returns zipped Harbor task directory (`application/zip`, `<task_id>.zip`).
 
 ---
 

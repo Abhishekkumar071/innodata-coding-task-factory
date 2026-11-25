@@ -32,6 +32,8 @@ Instead of hand-crafting benchmark tasks, our pipeline analyzes a pinned, clean 
 
 ## Documentation Index
 
+> **AI Agents & Contributors:** Read [`AGENTS.md`](./AGENTS.md) first for engineering rules, directory ownership, Git safety, and completion-report standards.
+
 All planning, architecture, interface contracts, and execution plans live inside [`docs/`](./docs/):
 
 1. [**Problem Statement & Scope**](./docs/problem-statement.md) — Official Track 1 goals, starter repo selection rationale, rules, and judging weights.
