@@ -64,3 +64,5 @@ harbor run -p ./artifacts/tasks/<task-id> -a oracle -k 1 -o ./artifacts/harbor_r
 ```
 
 > **Note:** Detailed setup instructions and pinned commit hashes will be locked in [`docs/IMPLEMENTATION.md`](./docs/IMPLEMENTATION.md) during Day 1 setup.
+> # test commit
+
