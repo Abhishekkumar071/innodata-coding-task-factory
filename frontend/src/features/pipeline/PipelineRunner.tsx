@@ -1,8 +1,16 @@
 
-
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import type { PipelineStage, TaskAxis } from '../../types/api'
+import {
+  createRun,
+  getRun,
+  subscribeToRunEvents,
+} from '../../services/api'
+import type {
+  PipelineEvent,
+  PipelineStage,
+  TaskAxis,
+} from '../../types/api'
 
 const taskAxes: { value: TaskAxis; label: string }[] = [
   { value: 'parameter-validation', label: 'Parameter Validation' },
@@ -12,13 +20,22 @@ const taskAxes: { value: TaskAxis; label: string }[] = [
   { value: 'testing-completion', label: 'Testing & Completion' },
 ]
 
-const pipelineStages: { value: PipelineStage; label: string }[] = [
-  { value: 'analyze', label: 'Analyze Repository' },
-  { value: 'ideate', label: 'Generate Ideas' },
-  { value: 'synthesize', label: 'Synthesize Tasks' },
-  { value: 'precheck', label: 'Run Precheck' },
-  { value: 'harbor_nop', label: 'Harbor NOP Validation' },
-  { value: 'harbor_oracle', label: 'Harbor Oracle Validation' },
+type DisplayStage =
+  | 'analyze'
+  | 'ideate'
+  | 'synthesize'
+  | 'precheck'
+  | 'harbor_validate'
+
+const pipelineStages: {
+  value: DisplayStage
+  label: string
+}[] = [
+  { value: 'analyze', label: 'Analyze' },
+  { value: 'ideate', label: 'Ideate' },
+  { value: 'synthesize', label: 'Synthesize' },
+  { value: 'precheck', label: 'Fast Check' },
+  { value: 'harbor_validate', label: 'Harbor Validate' },
 ]
 
 const cardClass =
@@ -29,6 +46,24 @@ const inputClass =
 
 const labelClass =
   'mb-2 block text-sm font-medium text-slate-300'
+
+function mapPipelineEvent(stage: PipelineStage): DisplayStage | null {
+  switch (stage) {
+    case 'analyze':
+      return 'analyze'
+    case 'ideate':
+      return 'ideate'
+    case 'synthesize':
+      return 'synthesize'
+    case 'precheck':
+      return 'precheck'
+    case 'harbor_nop':
+    case 'harbor_oracle':
+      return 'harbor_validate'
+    default:
+      return null
+  }
+}
 
 export default function PipelineRunner() {
   const [repo, setRepo] = useState('pallets/click')
@@ -41,9 +76,16 @@ export default function PipelineRunner() {
 
   const [isRunning, setIsRunning] = useState(false)
   const [activeStage, setActiveStage] = useState(-1)
-  const [completedStages, setCompletedStages] = useState<PipelineStage[]>([])
+  const [completedStages, setCompletedStages] = useState<DisplayStage[]>([])
+
   const [error, setError] = useState('')
+  const [connectionWarning, setConnectionWarning] = useState('')
   const [isCompleted, setIsCompleted] = useState(false)
+  const [runId, setRunId] = useState('')
+  const [activeRunId, setActiveRunId] = useState<string | null>(null)
+  const [latestMessage, setLatestMessage] = useState('')
+
+  const totalStages = runHarbor ? 5 : 4
 
   const toggleAxis = (axis: TaskAxis) => {
     setAxes((current) =>
@@ -52,16 +94,147 @@ export default function PipelineRunner() {
         : [...current, axis]
     )
   }
+
   const handleHarborChange = (checked: boolean) => {
     setRunHarbor(checked)
     setActiveStage(-1)
     setCompletedStages([])
     setIsCompleted(false)
     setError('')
+    setConnectionWarning('')
+    setLatestMessage('')
   }
-  const startMockPipeline = async (event: FormEvent<HTMLFormElement>) => {
+
+  // Handle live backend pipeline events.
+  const handlePipelineEvent = useCallback((event: PipelineEvent) => {
+    setLatestMessage(event.message)
+    setConnectionWarning('')
+
+    if (
+        event.stage === 'harbor_nop' ||
+        event.stage === 'harbor_oracle'
+    ) {
+        setActiveStage(4)
+        return
+    }
+
+    const displayStage = mapPipelineEvent(event.stage)
+
+    if (!displayStage) {
+      return
+    }
+
+    const stageIndex = pipelineStages.findIndex(
+      (stage) => stage.value === displayStage
+    )
+
+    setActiveStage(stageIndex)
+
+    setCompletedStages((current) =>
+      current.includes(displayStage)
+        ? current
+        : [...current, displayStage]
+    )
+  }, [])
+
+  // Subscribe to live Server-Sent Events.
+  useEffect(() => {
+    if (!activeRunId) {
+      return
+    }
+
+    const eventSource = subscribeToRunEvents(
+      activeRunId,
+      handlePipelineEvent,
+      () => {
+        setConnectionWarning(
+          'Live connection interrupted. Waiting for reconnection...'
+        )
+      }
+    )
+
+    return () => {
+      eventSource.close()
+    }
+  }, [activeRunId, handlePipelineEvent])
+
+  // Poll backend for the actual run status.
+  useEffect(() => {
+    if (!activeRunId) {
+      return
+    }
+
+    let cancelled = false
+    let checking = false
+
+    const checkRunStatus = async () => {
+      if (checking || cancelled) {
+        return
+      }
+
+      checking = true
+
+      try {
+        const run = await getRun(activeRunId)
+
+        if (cancelled) {
+          return
+        }
+
+        if (run.status === 'completed') {
+          const finishedStages = pipelineStages
+            .filter(
+              (stage) =>
+                runHarbor || stage.value !== 'harbor_validate'
+            )
+            .map((stage) => stage.value)
+
+          setCompletedStages(finishedStages)
+          setActiveStage(-1)
+          setIsRunning(false)
+          setIsCompleted(true)
+          setConnectionWarning('')
+          setLatestMessage('Pipeline completed.')
+          setActiveRunId(null)
+        } else if (run.status === 'failed') {
+          setError('The backend reported that this pipeline run failed.')
+          setIsRunning(false)
+          setActiveRunId(null)
+        } else {
+          setConnectionWarning('')
+        }
+      } catch {
+        if (!cancelled) {
+          setConnectionWarning(
+            'Unable to refresh run status. Retrying...'
+          )
+        }
+      } finally {
+        checking = false
+      }
+    }
+
+    void checkRunStatus()
+
+    const intervalId = window.setInterval(() => {
+      void checkRunStatus()
+    }, 2000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+    }
+  }, [activeRunId, runHarbor])
+
+  // Start a real pipeline run through the backend API.
+  const startPipeline = async (
+    event: FormEvent<HTMLFormElement>
+  ) => {
     event.preventDefault()
+
     setError('')
+    setConnectionWarning('')
+    setLatestMessage('')
 
     if (!repo.trim()) {
       setError('Please enter a repository name.')
@@ -87,62 +260,73 @@ export default function PipelineRunner() {
     setIsCompleted(false)
     setActiveStage(-1)
     setCompletedStages([])
+    setRunId('')
+    setActiveRunId(null)
 
-    const stagesToRun = runHarbor
-      ? pipelineStages
-      : pipelineStages.slice(0, 4)
-
-    for (let index = 0; index < stagesToRun.length; index++) {
-      setActiveStage(index)
-
-      await new Promise<void>((resolve) => {
-        window.setTimeout(resolve, 900)
+    try {
+      const response = await createRun({
+        repo: repo.trim(),
+        base_commit: baseCommit.trim(),
+        count,
+        axes,
+        run_harbor: runHarbor,
+        run_mutations: false,
       })
 
-      setCompletedStages((current) => [
-        ...current,
-        stagesToRun[index].value,
-      ])
-    }
+      setRunId(response.run_id)
+      setActiveRunId(response.run_id)
+      setLatestMessage('Pipeline run queued successfully.')
+    } catch (err) {
+      setIsRunning(false)
 
-    setIsRunning(false)
-    setIsCompleted(true)
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Unable to start the pipeline. Please check the backend connection.'
+      )
+    }
   }
 
   const progress = Math.round(
-    (completedStages.length / (runHarbor ? 6 : 4)) * 100
+    (completedStages.length / totalStages) * 100
   )
 
   return (
     <section className="space-y-6">
-
-      {/* Mock Mode Notice */}
-      <div className="flex items-start gap-3 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] p-4">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-400/10 text-amber-300">
-          !
+      {/* Backend Connection Notice */}
+      <div className="flex items-start gap-3 rounded-xl border border-blue-400/20 bg-blue-400/[0.06] p-4">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-400/10 text-blue-300">
+          i
         </div>
         <div>
-          <p className="text-sm font-semibold text-amber-300">
-            Mock Mode
+          <p className="text-sm font-semibold text-blue-300">
+            Backend Integration
           </p>
-          <p className="mt-1 text-xs leading-5 text-amber-200/70 sm:text-sm">
-            Pipeline progress is currently simulated. Backend integration
-            will be connected when the FastAPI server is ready.
+          <p className="mt-1 text-xs leading-5 text-blue-200/70 sm:text-sm">
+            Pipeline execution uses the FastAPI backend. Live progress is
+            received through Server-Sent Events.
           </p>
         </div>
       </div>
 
       {/* Main Grid */}
       <div className="grid items-start gap-6 xl:grid-cols-2">
-
         {/* Pipeline Configuration */}
-        <form onSubmit={startMockPipeline} className={cardClass}>
-
+        <form onSubmit={startPipeline} className={cardClass}>
           <div className="mb-6">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
-                <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.8">
-                  <path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.64 5.64l2.12 2.12m8.48 8.48 2.12 2.12m0-12.72-2.12 2.12m-8.48 8.48-2.12 2.12" strokeLinecap="round" />
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  className="h-5 w-5"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                >
+                  <path
+                    d="M12 3v3m0 12v3M3 12h3m12 0h3M5.64 5.64l2.12 2.12m8.48 8.48 2.12 2.12m0-12.72-2.12 2.12m-8.48 8.48-2.12 2.12"
+                    strokeLinecap="round"
+                  />
                   <circle cx="12" cy="12" r="4" />
                 </svg>
               </div>
@@ -158,7 +342,6 @@ export default function PipelineRunner() {
           </div>
 
           <div className="space-y-5">
-
             {/* Repository */}
             <div>
               <label className={labelClass}>
@@ -202,7 +385,11 @@ export default function PipelineRunner() {
                 className={inputClass}
               >
                 {[1, 2, 3, 4, 5].map((number) => (
-                  <option key={number} value={number} className="bg-[#0e1728]">
+                  <option
+                    key={number}
+                    value={number}
+                    className="bg-[#0e1728]"
+                  >
                     {number} {number === 1 ? 'Task' : 'Tasks'}
                   </option>
                 ))}
@@ -240,9 +427,11 @@ export default function PipelineRunner() {
                         disabled={isRunning}
                         className="h-4 w-4 shrink-0 accent-blue-500"
                       />
-                      <span className={`text-xs font-medium leading-5 ${
-                        selected ? 'text-blue-200' : 'text-slate-400'
-                      }`}>
+                      <span
+                        className={`text-xs font-medium leading-5 ${
+                          selected ? 'text-blue-200' : 'text-slate-400'
+                        }`}
+                      >
                         {axis.label}
                       </span>
                     </label>
@@ -252,13 +441,17 @@ export default function PipelineRunner() {
             </div>
 
             {/* Harbor Validation */}
-            <label className={`flex cursor-pointer items-center gap-3 rounded-xl border border-white/[0.07] bg-[#080f1d] p-4 transition hover:border-white/15 ${
-              isRunning ? 'cursor-not-allowed opacity-50' : ''
-            }`}>
+            <label
+              className={`flex cursor-pointer items-center gap-3 rounded-xl border border-white/[0.07] bg-[#080f1d] p-4 transition hover:border-white/15 ${
+                isRunning ? 'cursor-not-allowed opacity-50' : ''
+              }`}
+            >
               <input
                 type="checkbox"
                 checked={runHarbor}
-                onChange={(event) => handleHarborChange(event.target.checked)}
+                onChange={(event) =>
+                  handleHarborChange(event.target.checked)
+                }
                 disabled={isRunning}
                 className="h-4 w-4 shrink-0 accent-blue-500"
               />
@@ -277,7 +470,10 @@ export default function PipelineRunner() {
 
             {/* Error */}
             {error && (
-              <div className="rounded-xl border border-red-500/20 bg-red-500/[0.07] p-3 text-sm text-red-300">
+              <div
+                role="alert"
+                className="rounded-xl border border-red-500/20 bg-red-500/[0.07] p-3 text-sm text-red-300"
+              >
                 {error}
               </div>
             )}
@@ -295,8 +491,18 @@ export default function PipelineRunner() {
                 </>
               ) : (
                 <>
-                  <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="2">
-                    <path d="M5 12h14m-6-6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    className="h-4 w-4"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <path
+                      d="M5 12h14m-6-6 6 6-6 6"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
                   </svg>
                   Run Pipeline
                 </>
@@ -307,12 +513,20 @@ export default function PipelineRunner() {
 
         {/* Pipeline Progress */}
         <div className={`${cardClass} xl:sticky xl:top-28`}>
-
           <div className="mb-7 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400">
-                <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" stroke="currentColor" strokeWidth="1.8">
-                  <path d="M4 18V6m5 12V10m5 8V4m5 14v-6" strokeLinecap="round" />
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  className="h-5 w-5"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                >
+                  <path
+                    d="M4 18V6m5 12V10m5 8V4m5 14v-6"
+                    strokeLinecap="round"
+                  />
                 </svg>
               </div>
               <div>
@@ -325,16 +539,38 @@ export default function PipelineRunner() {
               </div>
             </div>
 
-            <span className={`rounded-full border px-3 py-1 text-[10px] font-semibold ${
-              isCompleted
-                ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300'
-                : isRunning
-                  ? 'border-blue-400/20 bg-blue-400/10 text-blue-300'
-                  : 'border-white/[0.08] bg-white/[0.04] text-slate-400'
-            }`}>
-              {isCompleted ? 'COMPLETED' : isRunning ? 'RUNNING' : 'WAITING'}
+            <span
+              className={`rounded-full border px-3 py-1 text-[10px] font-semibold ${
+                isCompleted
+                  ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300'
+                  : error
+                    ? 'border-red-400/20 bg-red-400/10 text-red-300'
+                    : isRunning
+                      ? 'border-blue-400/20 bg-blue-400/10 text-blue-300'
+                      : 'border-white/[0.08] bg-white/[0.04] text-slate-400'
+              }`}
+            >
+              {isCompleted
+                ? 'COMPLETED'
+                : error
+                  ? 'ERROR'
+                  : isRunning
+                    ? 'RUNNING'
+                    : 'WAITING'}
             </span>
           </div>
+
+          {/* Run ID */}
+          {runId && (
+            <div className="mb-4 rounded-xl border border-white/[0.06] bg-[#080f1d] p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                Run ID
+              </p>
+              <p className="mt-1 break-all font-mono text-xs text-slate-300">
+                {runId}
+              </p>
+            </div>
+          )}
 
           {/* Progress Percentage */}
           <div className="rounded-xl border border-white/[0.06] bg-[#080f1d] p-4">
@@ -361,9 +597,28 @@ export default function PipelineRunner() {
             </div>
 
             <p className="mt-3 text-xs text-slate-500">
-              {completedStages.length} of {runHarbor ? 6 : 4} stages completed
+              {completedStages.length} of {totalStages} stages completed
             </p>
           </div>
+
+          {/* Connection Warning */}
+          {connectionWarning && (
+            <div className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] p-3 text-xs text-amber-300">
+              {connectionWarning}
+            </div>
+          )}
+
+          {/* Latest Backend Message */}
+          {latestMessage && (
+            <div className="mt-4 rounded-xl border border-white/[0.06] bg-[#080f1d] p-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                Latest Pipeline Event
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-300">
+                {latestMessage}
+              </p>
+            </div>
+          )}
 
           {/* Pipeline Stages */}
           <div className="mt-7">
@@ -375,27 +630,32 @@ export default function PipelineRunner() {
               {pipelineStages
                 .filter(
                   (stage) =>
-                    runHarbor ||
-                    !['harbor_nop', 'harbor_oracle'].includes(stage.value)
+                    runHarbor || stage.value !== 'harbor_validate'
                 )
-                .map((stage, index) => {
+                .map((stage, index, visibleStages) => {
                   const isDone = completedStages.includes(stage.value)
-                  const isActive =
-                    isRunning &&
-                    pipelineStages[activeStage]?.value === stage.value
 
-                  const isLast = index === (runHarbor ? 5 : 3)
+                  const stageIndex = pipelineStages.findIndex(
+                    (item) => item.value === stage.value
+                  )
+
+                  const isActive =
+                    isRunning && activeStage === stageIndex
+
+                  const isLast = index === visibleStages.length - 1
 
                   return (
                     <div key={stage.value} className="flex gap-4">
                       <div className="flex flex-col items-center">
-                        <div className={`z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-xs font-bold transition ${
-                          isDone
-                            ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
-                            : isActive
-                              ? 'border-blue-400/40 bg-blue-500/15 text-blue-300'
-                              : 'border-white/[0.08] bg-[#080f1d] text-slate-600'
-                        }`}>
+                        <div
+                          className={`z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-xs font-bold transition ${
+                            isDone
+                              ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+                              : isActive
+                                ? 'border-blue-400/40 bg-blue-500/15 text-blue-300'
+                                : 'border-white/[0.08] bg-[#080f1d] text-slate-600'
+                          }`}
+                        >
                           {isDone ? (
                             '✓'
                           ) : isActive ? (
@@ -406,20 +666,26 @@ export default function PipelineRunner() {
                         </div>
 
                         {!isLast && (
-                          <div className={`min-h-8 w-px ${
-                            isDone ? 'bg-emerald-400/30' : 'bg-white/[0.08]'
-                          }`} />
+                          <div
+                            className={`min-h-8 w-px ${
+                              isDone
+                                ? 'bg-emerald-400/30'
+                                : 'bg-white/[0.08]'
+                            }`}
+                          />
                         )}
                       </div>
 
                       <div className="min-w-0 flex-1 pb-7">
-                        <p className={`text-sm font-semibold ${
-                          isDone
-                            ? 'text-emerald-300'
-                            : isActive
-                              ? 'text-blue-300'
-                              : 'text-slate-400'
-                        }`}>
+                        <p
+                          className={`text-sm font-semibold ${
+                            isDone
+                              ? 'text-emerald-300'
+                              : isActive
+                                ? 'text-blue-300'
+                                : 'text-slate-400'
+                          }`}
+                        >
                           {stage.label}
                         </p>
 
@@ -441,10 +707,10 @@ export default function PipelineRunner() {
           {isCompleted && (
             <div className="mt-2 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.07] p-4">
               <p className="text-sm font-semibold text-emerald-300">
-                Mock pipeline completed successfully.
+                Pipeline completed successfully.
               </p>
               <p className="mt-1 text-xs text-emerald-200/60">
-                This is a simulated result. Actual execution will use the backend.
+                The backend has reported that this run is completed.
               </p>
             </div>
           )}

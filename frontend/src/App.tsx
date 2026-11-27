@@ -3,7 +3,7 @@ import { useState } from 'react'
 import PipelineRunner from './features/pipeline/PipelineRunner'
 import VariationsTable from './features/variations/VariationsTable'
 import TaskInspector from './features/task-inspector/TaskInspector'
-
+import type { TaskSummary } from './types/api'
 type ActivePage = 'pipeline' | 'variations' | 'inspector'
 
 const navigation = [
@@ -29,21 +29,31 @@ const navigation = [
 
 function App() {
   const [activePage, setActivePage] = useState<ActivePage>('pipeline')
+  const [selectedTask, setSelectedTask] = useState<TaskSummary | null>(null)
+
+  const handleSelectTask = (task: TaskSummary) => {
+    setSelectedTask(task)
+    setActivePage('inspector')
+  }
 
   const currentPage = navigation.find(
     (item) => item.id === activePage
   )!
 
   const renderPage = () => {
-    switch (activePage) {
-      case 'pipeline':
-        return <PipelineRunner />
-      case 'variations':
-        return <VariationsTable />
-      case 'inspector':
-        return <TaskInspector />
-    }
+  switch (activePage) {
+    case 'pipeline':
+      return <PipelineRunner />
+
+    case 'variations':
+      return (
+        <VariationsTable onSelectTask={handleSelectTask} />
+      )
+
+    case 'inspector':
+      return <TaskInspector task={selectedTask} />
   }
+}
 
   return (
     <div className="min-h-screen bg-[#080d18] text-slate-100">
@@ -149,7 +159,7 @@ function App() {
 
               <div className="flex items-center gap-3">
                 <span className="rounded-full border border-amber-400/20 bg-amber-400/[0.08] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-amber-300">
-                  Mock Preview
+                  API Integration
                 </span>
 
                 <div className="hidden h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-slate-800 text-xs font-bold text-slate-300 sm:flex">
