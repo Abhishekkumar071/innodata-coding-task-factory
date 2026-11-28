@@ -1,0 +1,9 @@
+[
+  "tests/test_feature_result_lines.py::test_inner_blank_lines_preserved_without_trailing_newline",
+  "tests/test_feature_result_lines.py::test_lines_are_empty_list_for_empty_output",
+  "tests/test_feature_result_lines.py::test_lines_property_returns_a_new_list_each_time",
+  "tests/test_feature_result_lines.py::test_only_newline_separates_lines",
+  "tests/test_feature_result_lines.py::test_output_lines_split_on_newline",
+  "tests/test_feature_result_lines.py::test_single_newline_is_one_empty_line",
+  "tests/test_feature_result_lines.py::test_stdout_stderr_and_mixed_output_lines"
+]
