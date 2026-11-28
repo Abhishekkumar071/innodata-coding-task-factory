@@ -83,11 +83,12 @@ memory_mb = 4096
 # FIXED TEMPLATE rendered by task_factory/harbor_writer.py. Identical for every task.
 FROM python:3.11-slim
 
+# less: required by click's echo_via_pager suite (24 failures without it).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates \
+ && apt-get install -y --no-install-recommends git ca-certificates less \
  && rm -rf /var/lib/apt/lists/*
 
-ARG BASE_COMMIT=<40_CHAR_FULL_GIT_COMMIT_SHA>
+ARG BASE_COMMIT={{BASE_COMMIT}}
 WORKDIR /app
 
 # Fetch exactly one commit: no future upstream history inside the image.
@@ -98,11 +99,12 @@ RUN git init -q /app \
  && git -C /app remote remove origin \
  && test "$(git -C /app rev-parse HEAD)" = "${BASE_COMMIT}"
 
-# Editable install + pytest pinned to click's own test requirements at base_commit.
-RUN pip install --no-cache-dir -e /app "pytest==<PINNED_PYTEST_VERSION>"
+# Editable install + pytest pinned to click's own lockfile at base_commit.
+RUN pip install --no-cache-dir -e /app "pytest=={{PYTEST_PIN}}"
 ```
 
-- `<PINNED_PYTEST_VERSION>` comes from `requirements/tests.txt` (or equivalent) at the pinned tag. **[VERIFY on Day 1]** Add any other plugin click's suite needs; never leave versions floating.
+- **Verified 28 Nov:** `{{PYTEST_PIN}}` = `9.0.2` (from click 8.5.1 `uv.lock`, `settings.pytest_pin`); `{{BASE_COMMIT}}` = `cf19179e8e2fd54c601378cec9e0d21bb12b6fb1` (tag `8.5.1`). `python:3.11-slim` lacks `less`, which made 24 tests in `tests/test_utils/test_echo_via_pager.py` fail; with `less` the baseline is `2434 passed, 24 skipped, 1 xfailed, 31000 deselected` (`-m 'not stress'` from click's own pytest config). No other plugins are needed. Never leave versions floating.
+- Template source: `task_factory/templates/harbor/Dockerfile`; placeholders are `{{NAME}}` and are filled only with regex-validated values.
 - The same rendered Dockerfile builds the Stage 1 image `click-sandbox:<sha12>` (ADR-01).
 
 ### 2.3 `solution/solve.sh` (fixed template)
@@ -183,7 +185,7 @@ Why these flags:
 import json
 import os
 
-_OUT = os.environ.get("REWARD_RESULTS_PATH", "/logs/verifier/test_results.json")
+_OUT = os.path.join(os.environ.get("VERIFIER_LOG_DIR", "/logs/verifier"), "test_results.json")
 _results = {}
 
 
@@ -216,8 +218,9 @@ import json
 import os
 from pathlib import Path
 
-LOG_DIR = Path("/logs/verifier")
-TESTS_DIR = Path("/tests")
+# Overridable only so the factory's own unit tests can run this file outside a container.
+LOG_DIR = Path(os.environ.get("VERIFIER_LOG_DIR", "/logs/verifier"))
+TESTS_DIR = Path(os.environ.get("VERIFIER_TESTS_DIR", "/tests"))
 MAX_LISTED = 50
 
 
@@ -322,13 +325,13 @@ Output dirs are **unique per run/task/mode** (never shared). **[VERIFY: layout o
 
 Run after writing and before Harbor. Any failure → `LeakageDetected` / `ScopeViolation`, task rejected, reason logged.
 
-- [ ] All 9 required files exist (Section 1), plus exactly one `tests/test_feature_*.py`.
-- [ ] `task_id` matches regex; directory name equals `task.toml` `task_id`; `base_commit` is 40-hex and equals `config.CLICK_BASE_COMMIT`; `axis` is a canonical slug.
+- [ ] All 10 required files exist (Section 1), plus exactly one `tests/test_feature_*.py`, and no other files (e.g. no `conftest.py`).
+- [ ] `task_id` matches regex; directory name equals `task.toml` `task_id`; `base_commit` is 40-hex and equals `settings.click_base_commit`; `axis` is a canonical slug.
 - [ ] Every file is UTF-8 without BOM and contains no `\r`.
 - [ ] Fixed-template files are byte-identical to a fresh render (no drift/hand edits).
 - [ ] Dockerfile: no `COPY`/`ADD`, no `solution`/`tests` reference.
 - [ ] `solution.patch`: only `src/click/**`, ≤ 400 changed lines, deny-list clean, `git apply --check` passes on a clean worktree.
-- [ ] `fail_to_pass.json`: 3–10 IDs, all inside the feature module; `pass_to_pass.json` equals the run baseline.
+- [ ] `fail_to_pass.json`: 3–10 unique, sorted IDs, all inside the feature module; `pass_to_pass.json`: non-empty, unique, sorted, no feature IDs, equals the run baseline (when given).
 - [ ] `instruction.md`: no banned tokens (`test_feature`, `fail_to_pass`, `pass_to_pass`, `::test_`, `@@`, `+++ `, `--- a/`, `diff --git`); no verbatim copy of an added patch line > 40 chars except declared signatures; contains all required template sections (Goal, Required behaviour, Public API, Errors, Examples, Non-goals, Compatibility).
 
 ---

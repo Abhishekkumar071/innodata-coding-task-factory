@@ -98,12 +98,12 @@ flowchart TD
     H -- "mismatch" --> X
 ```
 
-**Over-generation rule:** ideation proposes `count + 2` blueprints so rejections do not leave us short. The final selection keeps axis coverage (each of the 5 axes ≥ 1 task; for 10–15 tasks, each axis ≥ 2).
+**Over-generation rule:** `propose_blueprints()` returns up to `count + 2` **guard-accepted** blueprints, covering the requested axes first; `pipeline.py` synthesizes the first `count` and uses the extras as backups when a task fails synthesis, Stage 1, or Harbor. The final selection keeps axis coverage (each of the 5 axes ≥ 1 task; for 10–15 tasks, each axis ≥ 2).
 
 ### 4.1 Stage Contracts (inputs → outputs)
 | Stage | Function (owner) | Input | Output | Failure → |
 | :--- | :--- | :--- | :--- | :--- |
-| Analyze | `repo_analyzer.analyze_repo()` (Alok) | `RunConfig` | `RepoSnapshot` (symbol map, file index, upstream feature index) | `RepoStateError` (dirty / SHA mismatch) → run fails |
+| Analyze | `repo_analyzer.analyze_repo()` (Alok) | `mirror: Path, base_commit: str` (from `ensure_mirror()` + `RunConfig.base_commit`) | `RepoSnapshot` (symbol map, file index, upstream feature index) | `RepoStateError` (dirty / SHA mismatch) → run fails |
 | Baseline | `sandbox_precheck.collect_baseline()` (Mrityunjay) | mirror path, SHA | `BaselineResult` (`pass_to_pass`, excluded flaky/skipped) | `SandboxError` → run fails |
 | Ideate | `variation_engine.propose_blueprints()` (Alok) | `RepoSnapshot`, axes, count | `list[FeatureBlueprint]` + rejected list with reasons | `LLMError` after retries → run fails |
 | Synthesize | `synthesizer.synthesize_task()` (Alok) | blueprint, snapshot, baseline | `SynthesizedTask` (with `repair_attempts`, attempt history) | `PrecheckFailed` → task rejected |
@@ -323,6 +323,8 @@ New ADRs are proposed in a PR touching this table and must be approved by Abhish
 ## 15. Day-1 Verification Items (Owner: Abhishek, due 28 Nov)
 
 These are **assumptions** until verified against the installed `harbor==0.25.*`. Record results in [`TASK_INTERFACE.md`](./TASK_INTERFACE.md):
+**Resolved 28 Nov:** item 7 — click `8.5.1` @ `cf19179e8e2fd54c601378cec9e0d21bb12b6fb1`, `pytest==9.0.2` (click `uv.lock`), image needs `less`; sandbox baseline `2434 passed, 24 skipped, 1 xfailed, 31000 deselected` (stress marker), stable across 3 runs.
+
 1. Exact `task.toml` schema from `harbor task init` — where `base_commit`/metadata keys live; any required keys missing from our template.
 2. How Harbor invokes `tests/test.sh` and `solution/solve.sh` (via `bash` or direct exec → does the `+x` bit matter?).
 3. Whether `/tests` and `/solution` are copied or mounted, and at which paths; where `/logs/verifier/reward.txt` is read from.
@@ -373,7 +375,7 @@ flowchart LR
 **Guards (owner: Alok):**
 1. **Feature-only:** reject bug-fix language and "make X work correctly" framings.
 2. **Novelty at base:** reject if proposed public names/flags already exist in the AST symbol map or docstrings at `base_commit`.
-3. **Novelty vs upstream:** reject if the feature appears in upstream `CHANGES.rst` of newer releases (snapshot cached in `.cache/`) — avoids judges flagging "this already exists in a later click".
+3. **Novelty vs upstream:** reject if the feature appears in upstream `CHANGES.md` of newer releases. Source: the committed snapshot `artifacts/upstream/CHANGES.md` (`settings.upstream_changes_path`); fallback: a copy cached under `.cache/` — avoids judges flagging "this already exists in a later click".
 4. **Diversity:** pairwise Jaccard of `target_symbols` < 0.3, no two tasks with the same primary file *and* the same behaviour class, plus an LLM-judge "same feature?" check. Results written to `diversity.json` (feeds the P1 diversity report).
 
 **Task quality bar (all tasks):** instruction uses the standard template (Goal · Required behaviour · Public API · Errors & messages · Examples · Non-goals · Compatibility); 3–10 `fail_to_pass` tests using only public API; tests import new symbols inside test functions (so each test fails individually under `nop`); difficulty label derived from files touched, changed lines, and components interacting.

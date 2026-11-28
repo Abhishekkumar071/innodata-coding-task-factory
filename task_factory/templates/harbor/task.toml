@@ -1,0 +1,24 @@
+version = "1.0"
+
+[metadata]
+task_id = "{{TASK_ID}}"
+author_name = "Innodata Task Factory Team"
+difficulty = "{{DIFFICULTY}}"
+category = "feature-development"
+repo = "pallets/click"
+repo_url = "https://github.com/pallets/click.git"
+base_commit = "{{BASE_COMMIT}}"
+license = "BSD-3-Clause"
+axis = "{{AXIS}}"
+tags = ["python", "cli", "click", "feature-development"]
+
+[verifier]
+timeout_sec = 300.0
+
+[agent]
+timeout_sec = 600.0
+
+[environment]
+build_timeout_sec = 600.0
+cpus = 2
+memory_mb = 4096

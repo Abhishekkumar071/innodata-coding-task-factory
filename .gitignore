@@ -1,0 +1,35 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Secrets & local state
+.env
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Pipeline scratch space
+.cache/
+_tmp_*
+artifacts/runs/
+artifacts/harbor_runs/
+
+# Frontend
+node_modules/
+frontend/dist/
+
+# Editors / OS
+.idea/
+.DS_Store
+Thumbs.db
