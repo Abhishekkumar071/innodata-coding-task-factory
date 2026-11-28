@@ -52,7 +52,7 @@
 | Member | Build | Files | Done when |
 | :--- | :--- | :--- | :--- |
 | **Abhishek** | `templates/harbor/*` exactly per TASK_INTERFACE §2. `harbor_writer.py`: `write_text_lf`, `render_dockerfile`, `render_verifier_files`, `write_task_package`, `validate_package` (all §4 checks). Unit tests incl. `compute_reward.py` cases (ok/partial/crash/missing/fast-mode). Hand-craft `tests/fixtures/sample_task` (`click-00-manual-sample`) and run Harbor `nop`/`oracle` on WSL2. Close §15 verification items → update `[VERIFY]` markers. | `task_factory/harbor_writer.py`, `task_factory/templates/harbor/`, `tests/test_harbor_writer.py`, `tests/fixtures/sample_task/`, `docs/TASK_INTERFACE.md` | Harbor gives `0.0` / `1.0` on the sample; verification results announced |
-| **Alok** | `repo_analyzer.py`: `ensure_mirror()` (`core.autocrlf=false`, SHA + clean check → `RepoStateError`), `analyze_repo()` (AST `SymbolInfo` map, test file index), upstream `CHANGES.rst` feature index cached in `.cache/`. | `task_factory/repo_analyzer.py`, `tests/test_repo_analyzer.py` | Tests on a temp git repo green; `python -m task_factory analyze` (with Mrityunjay's CLI) prints symbol counts for the pinned SHA |
+| **Alok** | `repo_analyzer.py`: `ensure_mirror()` (`core.autocrlf=false`, SHA + clean check → `RepoStateError`), `analyze_repo()` (AST `SymbolInfo` map, test file index), upstream `CHANGES.md` feature index (`artifacts/upstream/CHANGES.md`, `.cache/` fallback). | `task_factory/repo_analyzer.py`, `tests/test_repo_analyzer.py` | Tests on a temp git repo green; `python -m task_factory analyze` (with Mrityunjay's CLI) prints symbol counts for the pinned SHA |
 | **Mrityunjay** | `sandbox_precheck.py`: `ensure_sandbox_image()` from `render_dockerfile()`, worktree manager (lock, prune, Windows retry), `verify_in_worktree()` (base + oracle runs, `--network none`, CPU/RAM/PID limits, fast/full mode), `collect_baseline()` (3 runs → stable set). | `task_factory/sandbox_precheck.py`, `tests/test_sandbox_precheck.py` (`@pytest.mark.docker`) | Sample task: sandbox summaries equal Harbor's; `baseline.json` written with pass count + exclusions |
 | **Subhasree** | Task Inspector: `react-diff-viewer-continued` for `solution.patch`, feature test code view, `fail_to_pass` / `pass_to_pass` lists, **logs tab** using `GET /api/tasks/{id}/logs/{evidence}` (mocked). | `frontend/src/features/task-inspector/*` | Build/lint green; inspector shows all 6 views from mocks |
 
@@ -66,7 +66,7 @@
 | Member | Build | Files | Done when |
 | :--- | :--- | :--- | :--- |
 | **Abhishek** | `harbor_runner.validate_task()`: unique `-o` dirs, parse Harbor job layout (from Gate 1 findings), acceptance from `verifier_summary.json` (ADR-11), evidence copy, semaphore + warm-first run, timeouts. Unit tests on a **recorded** Harbor output fixture. | `task_factory/harbor_runner.py`, `tests/test_harbor_runner.py`, `tests/fixtures/harbor_output/` | `validate_task(sample_task)` returns 2 accepted `ValidationOutcome`s; evidence folders populated |
-| **Alok** | `variation_engine.propose_blueprints()` v1: 5 axes, `count + 2` proposals, scope (bug-fix language), novelty (AST symbols/docstrings), upstream (`CHANGES.rst`) guards, basic Jaccard diversity. Record one live run. | `task_factory/variation_engine.py`, `task_factory/prompts/`, `tests/test_variation_engine.py` | FakeLLM tests cover each guard rejecting; 7 live blueprints → ≥ 5 accepted across 5 axes; fixture JSON shared |
+| **Alok** | `variation_engine.propose_blueprints()` v1: 5 axes, `count + 2` proposals, scope (bug-fix language), novelty (AST symbols/docstrings), upstream (`CHANGES.md`) guards, basic Jaccard diversity. Record one live run. | `task_factory/variation_engine.py`, `task_factory/prompts/`, `tests/test_variation_engine.py` | FakeLLM tests cover each guard rejecting; 7 live blueprints → ≥ 5 accepted across 5 axes; fixture JSON shared |
 | **Mrityunjay** | `pipeline.run_pipeline()` real wiring: analyze → baseline → ideate → synthesize (Alok's stub) → package → harbor; per-task `state.json` checkpoints; `--resume`; `generate` + `validate` CLI wired. | `task_factory/pipeline.py`, `task_factory/cli.py`, `tests/test_pipeline.py` | Pipeline test with FakeLLM + stubbed sandbox/harbor passes; resume skips completed stages |
 | **Subhasree** | Pipeline Runner on real `POST /api/runs` + SSE (fallback to mocks until routes land): stepper incl. `baseline` and `package`, live log panel with `level` colouring, reconnect banner. | `frontend/src/features/pipeline/*` | Works against mocks and against Mrityunjay's local backend when available |
 
@@ -171,7 +171,7 @@
 ## 5. Submission QA Checklist (Sun 6 Dec)
 
 - [ ] Fresh clone → `pip install -e ".[dev]"` → `doctor` → `validate --tasks artifacts/tasks` all green (no API key).
-- [ ] Every package: 9 required files, `task.toml` `base_commit` = pinned SHA, no `\r`/BOM, `.sh` executable in git.
+- [ ] Every package: 10 required files + 1 feature test, `task.toml` `base_commit` = pinned SHA, no `\r`/BOM, `.sh` executable in git.
 - [ ] `artifacts/validation_evidence/summary.md` matches `TECHNICAL_EXPLANATION.md` §6 numbers.
 - [ ] ≥ 5 tasks, all 5 axes covered, no bug-fix tasks, no network/credentials in tests.
 - [ ] Models/tools declared (incl. coding assistants used during development).

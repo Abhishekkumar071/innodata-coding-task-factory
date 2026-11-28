@@ -7,7 +7,7 @@ Everything listed below is **mandatory** for an automated, Harbor-compliant, jud
 ## 1. Core Pipeline (CLI — `task_factory/`)
 - [ ] **Repo & Commit Lock (`repo_analyzer.py`):**
   - Clone `pallets/click`, checkout pinned 40-char `base_commit` from a stable release tag, verify clean `git status`.
-  - Build Python `ast` module/symbol map and upstream `CHANGES.rst` feature index.
+  - Build Python `ast` module/symbol map and upstream `CHANGES.md` feature index (`artifacts/upstream/CHANGES.md`).
   - Baseline (`sandbox_precheck.collect_baseline()`): run the suite 3× **inside the Linux sandbox**; `pass_to_pass` = stable passes; exclusions recorded in `baseline.json`.
 - [ ] **5-Axis Task Variation Engine (`variation_engine.py`):**
   - Generate **5 substantively different feature blueprints** mapped to 5 distinct axes of `pallets/click` (Parameter/Type, Command/Group Routing, Help/Formatting, Context/EnvVar Resolution, Testing/Shell Integration).

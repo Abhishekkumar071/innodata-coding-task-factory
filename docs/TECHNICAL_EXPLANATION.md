@@ -6,16 +6,16 @@
 
 ## 1. Executive Summary
 
-We built an automated, Harbor `0.25.x`-compliant **Coding Task Factory** targeting **`pallets/click`** (pinned at commit `<40_CHAR_BASE_COMMIT>`). Rather than manually crafting tasks, the pipeline analyzes `click`'s Python AST and test suite, proposes **5 substantively different feature-development blueprints** across orthogonal subsystems, synthesizes non-leaky requirements (`instruction.md`), reference patches (`solution/`), and tests (`tests/fail_to_pass.json`, `tests/pass_to_pass.json`), iteratively self-repairs patches in an isolated Git worktree, and verifies every generated task inside Docker using official `harbor run -a nop` (`0.0`), `harbor run -a oracle` (`1.0`), and mutation testing.
+We built an automated, Harbor `0.25.x`-compliant **Coding Task Factory** targeting **`pallets/click`** (release `8.5.1`, pinned at commit `cf19179e8e2fd54c601378cec9e0d21bb12b6fb1`). Rather than manually crafting tasks, the pipeline analyzes `click`'s Python AST and test suite, proposes **5 substantively different feature-development blueprints** across orthogonal subsystems, synthesizes non-leaky requirements (`instruction.md`), reference patches (`solution/`), and tests (`tests/fail_to_pass.json`, `tests/pass_to_pass.json`), iteratively self-repairs patches in an isolated Git worktree, and verifies every generated task inside Docker using official `harbor run -a nop` (`0.0`), `harbor run -a oracle` (`1.0`), and mutation testing.
 
 ---
 
 ## 2. Starting Repository & Commit Selection
 
 - **Selected Repository:** `https://github.com/pallets/click`
-- **Release Tag / Branch:** `<TAG_NAME>`
-- **Pinned 40-Character `base_commit`:** `<40_CHAR_BASE_COMMIT>`
-- **Baseline Verification:** `[X / X]` existing `pytest` tests passed cleanly before task generation.
+- **Release Tag / Branch:** `8.5.1`
+- **Pinned 40-Character `base_commit`:** `cf19179e8e2fd54c601378cec9e0d21bb12b6fb1`
+- **Baseline Verification:** `2434 passed, 24 skipped, 1 xfailed, 31000 deselected` in Docker `python:3.11-slim` with `pytest==9.0.2` (click's `uv.lock` pin); identical across 3 runs. The 31000 deselected tests are click's own `stress` marker (`addopts = "-m 'not stress'"`). `pass_to_pass` = the 2434 stable passes; the 24 platform skips and 1 xfail are excluded and recorded.
 - **Why `pallets/click`:** Fast editable install (`pip install -e .`), deterministic `pytest` node IDs, rich CLI/decorator/validation/formatting surface area, and direct Python AST introspection.
 
 ---
@@ -77,4 +77,5 @@ Each candidate feature must pass:
 | `[task-05]` | Testing / Completion | `[N]` | `[M]` | `[k]` | `0.0` | `1.0` | `[x/y]` |
 
 ### Observed Failure Cases & Documented Fixes
+- **Missing `less` in the base image (28 Nov):** the first baseline in `python:3.11-slim` had 24 failures in `tests/test_utils/test_echo_via_pager.py` because the slim image has no pager. Fix: the fixed Dockerfile template installs `less`; baseline became fully green.
 - `[TO BE RECORDED: Document real failures encountered during pipeline development—e.g. CRLF shell script errors, LLM proposing an existing click option, flaky test assertions, self-repair examples—and the automated/engineering fixes implemented.]`

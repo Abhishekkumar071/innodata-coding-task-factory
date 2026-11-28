@@ -13,7 +13,7 @@ Defines the tech stack, repository layout and ownership, environment setup, **fr
 | Language & packaging | Python `3.11+`, single `pyproject.toml`, `pip install -e ".[dev]"` | `task_factory` + `backend` in one project |
 | Harbor evaluation | `harbor==0.25.*` installed as an **isolated tool** (`pipx install "harbor==0.25.*"` or `uv tool install`) + Docker Engine/Desktop | Invoked as a CLI subprocess (ADR-12); exact version recorded in `environment.json` |
 | Stage 1 sandbox | Docker (`docker run --network none`), image built from the Harbor Dockerfile template | ADR-01 |
-| LLM client | **One** provider SDK behind `task_factory/llm_client.py` | **Decision D1 (Abhishek, 27 Nov):** choose the provider with the team's best quota; implement that one + a `FakeLLM` for tests. Do not add multiple SDKs. |
+| LLM client | **One** provider SDK behind `task_factory/llm_client.py` | **Decision D1 (provisional, 28 Nov):** `google-genai` with default model `gemini-2.5-flash` (env-configurable; final model name confirmed by Alok). Implement that one + a `FakeLLM` for tests. Do not add multiple SDKs. |
 | Git & analysis | `GitPython` (or `git` subprocess), stdlib `ast`, `difflib` | Worktrees, diffs, AST symbol map |
 | Backend | `fastapi`, `uvicorn`, `pydantic>=2`, `sqlalchemy>=2` (SQLite, WAL) | SSE via `StreamingResponse` (no extra lib) |
 | Frontend | React 18 + Vite + TypeScript + Tailwind + `react-diff-viewer-continued` | Talks only to the backend contract (Section 5) |
@@ -62,10 +62,11 @@ innodata-coding-task-factory/
 │
 ├── tests/                            # Unit/integration tests — file owned by the module's owner
 │   ├── conftest.py                   # [Abhishek] shared fixtures (tmp mirror, FakeLLM factory)
-│   ├── fixtures/                     # [Abhishek] tiny sample task package for writer/runner tests
+│   ├── fixtures/                     # [Abhishek] sample_task/click-00-manual-sample + regenerate_sample_task.py
 │   └── test_<module>.py              # e.g. test_synthesizer.py → Alok, test_pipeline.py → Mrityunjay
 │
 ├── artifacts/                        # [Abhishek] curated outputs (committed)
+│   ├── upstream/CHANGES.md           # Upstream click changelog snapshot (novelty-vs-upstream guard)
 │   ├── tasks/<task_id>/              # Final Harbor packages
 │   ├── validation_evidence/          # Evidence bundle (TASK_INTERFACE §5)
 │   ├── llm_cache/                    # Recorded LLM I/O of the final run (replay)
@@ -176,7 +177,7 @@ class RepoSnapshot(BaseModel):
     source_files: list[str]                     # src/click/*.py
     symbols: list[SymbolInfo]
     test_files: list[str]
-    upstream_features: list[str] = []           # feature lines from newer upstream CHANGES.rst
+    upstream_features: list[str] = []           # feature lines from newer upstream CHANGES.md
 
 
 class BaselineResult(BaseModel):
@@ -319,10 +320,11 @@ class RunResult(BaseModel):
 | Env var | Default | Used by |
 | :--- | :--- | :--- |
 | `CLICK_REPO_URL` | `https://github.com/pallets/click.git` | analyzer, writer |
-| `CLICK_BASE_COMMIT` | pinned 40-char SHA (set 27 Nov) | all |
-| `CLICK_RELEASE_TAG` | tag of the pinned SHA | docs/evidence |
-| `PYTEST_PIN` | click's pinned pytest version | writer (Dockerfile) |
-| `LLM_PROVIDER` / `LLM_MODEL` | per Decision D1 | llm_client |
+| `CLICK_BASE_COMMIT` | `cf19179e8e2fd54c601378cec9e0d21bb12b6fb1` | all |
+| `CLICK_RELEASE_TAG` | `8.5.1` | docs/evidence |
+| `PYTEST_PIN` | `9.0.2` (from click 8.5.1 `uv.lock`) | writer (Dockerfile) |
+| `UPSTREAM_CHANGES_PATH` | `artifacts/upstream/CHANGES.md` (fallback: a cached copy under `CACHE_DIR`) | analyzer (upstream guard) |
+| `LLM_PROVIDER` / `LLM_MODEL` | `google-genai` / `gemini-2.5-flash` (D1, provisional) | llm_client |
 | `LLM_API_KEY` | — (never logged) | llm_client |
 | `LLM_MODE` | `live` | llm_client (`live`/`record`/`replay`) |
 | `LLM_TEMPERATURE` | `0` | llm_client |
@@ -339,7 +341,12 @@ class RunResult(BaseModel):
 | `CORS_ORIGINS` | `http://localhost:5173` | backend |
 | `LOG_LEVEL` | `INFO` | all |
 
-Exposed as a frozen Pydantic `Settings` object via `get_settings()` (cached). Modules never call `os.getenv`.
+Exposed as a frozen Pydantic `Settings` object (`model_config = ConfigDict(frozen=True, extra="forbid")`) via `get_settings()` (`@lru_cache`; tests call `get_settings.cache_clear()`). No `pydantic-settings` dependency.
+
+- **Field names** are the lower-case env var names: `click_repo_url`, `click_base_commit`, `click_release_tag`, `pytest_pin`, `upstream_changes_path`, `llm_provider`, `llm_model`, `llm_api_key`, `llm_mode`, `llm_temperature`, `llm_timeout_sec`, `llm_max_retries`, `llm_max_parallel`, `llm_cache_dir`, `artifacts_dir`, `cache_dir`, `db_path`, `sandbox_image_prefix`, `sandbox_max_parallel`, `sandbox_timeout_sec`, `max_repair_attempts`, `harbor_bin`, `harbor_timeout_sec`, `harbor_max_parallel`, `cors_origins` (comma-separated in env), `log_level`.
+- `llm_api_key: SecretStr | None = None` — never printed; the LLM client reads it with `settings.require_llm_api_key()` (raises `ConfigError` when unset). `settings.sandbox_image` derives `click-sandbox:<sha12>`.
+- **Resolution order:** process env > `.env` in the working directory > defaults. Empty values count as unset. Invalid values raise `ConfigError` listing field names only (input values are never echoed).
+- `config.py` is the only module that reads `os.environ`. Modules never call `os.getenv`.
 
 ### 4.3 SQLite Tables (`backend/models.py`) — index over `artifacts/`, rebuildable
 - **`runs`**: `id` (PK, run_id), `repo`, `base_commit`, `target_count`, `status` (`queued|running|completed|failed`), `llm_mode`, `model_used`, `error`, `created_at`, `completed_at`
@@ -371,13 +378,21 @@ def propose_blueprints(snapshot: RepoSnapshot, axes: list[AxisSlug], count: int,
 # synthesizer.py (Alok)
 def synthesize_task(blueprint: FeatureBlueprint, snapshot: RepoSnapshot, baseline: BaselineResult,
                     llm: LLMClient, emit: Callable[[str, str], None]) -> SynthesizedTask  # raises PrecheckFailed
+#   emit(level, message): level is "info" | "warn" | "error"; pipeline.py wraps it into a RunEvent
+#   (stage="synthesize"/"precheck", task_id=blueprint.task_id).
 
 # harbor_writer.py (Abhishek)
 def write_text_lf(path: Path, text: str) -> None
-def render_dockerfile(base_commit: str) -> str
+def render_dockerfile(base_commit: str, *, pytest_pin: str | None = None) -> str   # pin defaults to settings.pytest_pin
+def render_task_toml(task_id: str, *, axis: str, difficulty: str, base_commit: str) -> str
+def render_solve_sh() -> str
 def render_verifier_files() -> dict[str, str]                           # test.sh + verifier/*.py (used by sandbox too)
-def write_task_package(task: SynthesizedTask, out_dir: Path) -> Path
-def validate_package(task_dir: Path) -> None                            # raises LeakageDetected / ScopeViolation
+def write_task_package(task: SynthesizedTask, out_dir: Path, *, base_commit: str | None = None,
+                       overwrite: bool = False) -> Path                 # stages, validates, then moves into place
+def validate_package(task_dir: Path, *, base_commit: str | None = None,
+                     pass_to_pass: list[str] | None = None,           # run baseline -> equality check
+                     apply_check_repo: Path | None = None) -> None    # clean checkout -> git apply --check
+                                                                        # raises LeakageDetected / ScopeViolation (all issues in .issues)
 
 # harbor_runner.py (Abhishek)
 def validate_task(task_dir: Path, run_id: str,
@@ -450,7 +465,7 @@ task_factory = ["templates/harbor/*", "prompts/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-norecursedirs = ["artifacts", ".cache", "_tmp_*", "frontend", "node_modules"]
+norecursedirs = ["artifacts", ".cache", "_tmp_*", "frontend", "node_modules", "fixtures", ".venv"]
 markers = ["docker: needs a Docker daemon", "harbor: needs harbor CLI", "llm: needs a live LLM key"]
 addopts = "-m 'not docker and not harbor and not llm'"
 
@@ -458,7 +473,7 @@ addopts = "-m 'not docker and not harbor and not llm'"
 line-length = 100
 target-version = "py311"
 ```
-`norecursedirs` matters: without it, root `pytest` collects `artifacts/tasks/*/tests/test_feature_*.py`, which import features that do not exist → CI red.
+`norecursedirs` matters: without it, root `pytest` collects `artifacts/tasks/*/tests/test_feature_*.py` and `tests/fixtures/sample_task/**/test_feature_*.py`, which use features that do not exist → CI red.
 
 ---
 

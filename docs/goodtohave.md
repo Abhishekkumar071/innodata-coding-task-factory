@@ -29,5 +29,7 @@
    - *Reminder:* Track 1 rules require choosing **one** starter repo for submission (`pallets/click`). Only explore `zod` internally if proving reusability in a bonus architectural demo, without diluting `pallets/click` evidence!
 2. **Difficulty Calibration Scoring:**
    - Automatically classify each generated task as `easy`, `medium`, or `hard` based on files modified, lines changed, API surface depth, and number of interacting components.
-3. **Failure Case Replay Explorer in UI:**
+3. **Task Quality Scoring (strictly post-MVP):**
+   - Score each accepted task on instruction clarity, spec–test consistency coverage, mutation kill rate, and difficulty signals; surface the score in `summary.md` and the UI. Never used as an acceptance gate.
+4. **Failure Case Replay Explorer in UI:**
    - Show Stage-1 self-repair history (Attempt 1 error $\rightarrow$ LLM fix $\rightarrow$ Attempt 2 pass) directly inside the UI so judges can see automated reliability in action.
