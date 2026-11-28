@@ -1,66 +1,108 @@
 # Innodata Coding Task Factory (Track 1)
 
-Automated **Feature-Development Task Factory** built for the **Innodata AI Hackathon 2026 (Track 1: Coding Task Factory)** using the **Harbor (`0.25.x`)** evaluation framework and **`pallets/click`** as the target open-source repository.
+Automated **feature-development task factory** for the **Innodata AI Hackathon 2026 — Track 1: Coding Task Factory**. It analyzes a pinned, clean commit of **[`pallets/click`](https://github.com/pallets/click)**, generates **5+ substantively different** feature-development tasks in strict **Harbor `0.25.x`** format, and proves every package automatically: Harbor `nop` → `0.0`, Harbor `oracle` → `1.0`, deliberately broken mutants → `< 1.0`. Everything is driven by a reproducible CLI, with a Control Room web UI for live inspection.
 
-Instead of hand-crafting benchmark tasks, our pipeline analyzes a pinned, clean commit of `pallets/click`, generates **5+ substantively different, realistic feature-development task packages** in strict Harbor format, validates every package automatically via `harbor run` (`nop` = `0.0`, `oracle` = `1.0`) and mutation testing, and exposes everything through both a **reproducible CLI** and a **Control Room Web Dashboard**.
+> **Project status (27 Nov 2026):** Architecture and contracts finalized (v2). Implementation in progress per [`docs/day-wise-plan.md`](./docs/day-wise-plan.md). Commands below marked *(planned)* land by the milestone shown.
+
+---
+
+## How It Works
+
+```text
+pallets/click @ base_commit
+  → Analyze (AST map, upstream feature index) → Baseline (stable pass_to_pass, 3 runs in Docker)
+  → Ideate (5 orthogonal axes + scope/novelty/diversity guards)
+  → Synthesize (instruction.md + whole-file edits → git diff + feature tests)
+  → Stage 1 sandbox (same image + same test.sh as Harbor; self-repair ≤ 3)
+  → Package (fixed Harbor templates + leak/scope validation)
+  → Stage 2 Harbor (nop = 0.0, oracle = 1.0) → Mutation testing → Evidence bundle
+```
+
+Details: [`docs/architecture.md`](./docs/architecture.md).
 
 ---
 
 ## Team & Ownership
 
-| Member | Role | Primary Ownership |
+| Member | Role | Owns |
 | :--- | :--- | :--- |
-| **Abhishek Kumar** *(Leader)* | Architecture, Harbor Infra & Validation | `docs/`, `task_factory/harbor_writer.py`, `harbor_runner.py`, `mutation_tester.py`, `pallets/click` commit pin, CI/Docker, final evidence bundle |
-| **Alok Tiwari** | AI Pipeline & Task Variation | `task_factory/repo_analyzer.py`, `variation_engine.py`, `synthesizer.py` (5-axis variation, prompt engineering, self-repair loop) |
-| **Mrityunjay Pandey** | Backend Orchestration & Sandbox | `task_factory/cli.py`, Git worktree fast pre-check, `backend/` (FastAPI, SQLite, SSE job streaming) |
-| **Subhasree Sahu** | Frontend Control Room | `frontend/` (React + TypeScript + Tailwind dashboard, diff inspector, Harbor validation scorecard) |
+| **Abhishek Kumar** *(Leader)* | Architecture, contracts, Harbor infra, validation, DevOps | `docs/`, root config, `task_factory/{config,schemas,errors,harbor_writer,harbor_runner,mutation_tester}.py`, Harbor templates, `artifacts/` |
+| **Alok Tiwari** | AI pipeline & task variation | `task_factory/{llm_client,repo_analyzer,variation_engine,synthesizer}.py`, `task_factory/prompts/` |
+| **Mrityunjay Pandey** | Orchestration, sandbox, CLI, backend | `task_factory/{cli,pipeline,sandbox_precheck}.py`, `backend/` |
+| **Subhasree Sahu** | Control Room UI | `frontend/` |
+
+AI coding agents and contributors: read [`AGENTS.md`](./AGENTS.md) first (rules, ownership, session preamble).
 
 ---
 
-## Core Compliance Summary (Track 1)
+## Track 1 Compliance Summary
 
-- **Target Repository:** [`pallets/click`](https://github.com/pallets/click) (Python CLI toolkit, `pip install -e .`, `pytest`)
-- **Task Interface:** Harbor Framework `harbor==0.25.*` (`task.toml`, `instruction.md`, `environment/Dockerfile`, `solution/solve.sh`, `tests/test.sh`, `tests/fail_to_pass.json`, `tests/pass_to_pass.json`)
-- **Task Scope:** Realistic **new feature-development** or **intentional behaviour-change** tasks only (no bug-fix tasks, no features that already exist upstream, no external network/real credentials)
-- **Variation Target:** Minimum **5 substantively different tasks** across distinct behavioural axes of `pallets/click`
-- **Validation Gate:**
-  - `harbor run -p <task_dir> -a nop -k 1 -o <out_dir> --no-delete -y` $\rightarrow$ Reward **`0.0`**
-  - `harbor run -p <task_dir> -a oracle -k 1 -o <out_dir> --no-delete -y` $\rightarrow$ Reward **`1.0`**
-  - Mutation test (deliberately broken patch) $\rightarrow$ Reward **`< 1.0`**
+- **Target repo:** `pallets/click` only, pinned at one 40-char `base_commit` where 100% of baseline tests pass.
+- **Scope:** new features or intentional behaviour changes only — no bug fixes, no features already present upstream, no network or real credentials.
+- **Variation:** ≥ 5 tasks across 5 axes — `parameter-validation`, `command-routing`, `formatting-termui`, `context-envvar`, `testing-completion`.
+- **Package:** `task.toml`, `instruction.md`, `environment/Dockerfile`, `solution/solve.sh`, `tests/test.sh`, `tests/fail_to_pass.json`, `tests/pass_to_pass.json` (+ `solution.patch`, feature test, verifier scripts) — see [`docs/TASK_INTERFACE.md`](./docs/TASK_INTERFACE.md).
+- **Validation gate:** `harbor run -a nop` → `0.0`, `harbor run -a oracle` → `1.0`, mutants → `< 1.0`, with logs in `artifacts/validation_evidence/`.
+
+---
+
+## Quickstart
+
+### Prerequisites
+Docker (daemon running), Git, Python 3.11+, Harbor `0.25.x` (`pipx install "harbor==0.25.*"`). Windows users run Harbor evidence on **WSL2**.
+
+```bash
+python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+cp .env.example .env                                  # LLM key only needed for path D
+```
+
+### Judge paths
+| Path | Command | API key | Available |
+| :--- | :--- | :---: | :--- |
+| A. Environment check | `python -m task_factory doctor` | No | *(planned, M3 — 3 Dec)* |
+| B. Validate shipped tasks | `python -m task_factory validate --tasks artifacts/tasks` | No | *(planned, M3)* |
+| C. Replay generation | `python -m task_factory generate --replay --out _tmp_replay` | No | *(planned, M3)* |
+| D. Fresh generation | `python -m task_factory generate --count 5 --out artifacts/tasks` | Yes | *(planned, M2 — 1 Dec)* |
+
+Validate one package directly with Harbor:
+```bash
+harbor run -p artifacts/tasks/<task_id> -a nop    -k 1 -o artifacts/harbor_runs/manual/<task_id>/harbor_nop    --no-delete -y
+harbor run -p artifacts/tasks/<task_id> -a oracle -k 1 -o artifacts/harbor_runs/manual/<task_id>/harbor_oracle --no-delete -y
+```
+
+### Control Room *(planned, M2)*
+```bash
+uvicorn backend.main:app --port 8000
+cd frontend && npm install && npm run dev            # http://localhost:5173
+```
+
+---
+
+## Repository Layout
+
+```text
+task_factory/   Core pipeline + CLI (python -m task_factory)
+backend/        FastAPI + SQLite + SSE wrapper around task_factory
+frontend/       React + Vite + TypeScript + Tailwind Control Room
+tests/          Unit & integration tests for the factory itself
+artifacts/      Curated Harbor task packages, validation evidence, recorded LLM I/O
+docs/           Architecture, contracts, plans, submission write-up
+```
 
 ---
 
 ## Documentation Index
 
-> **AI Agents & Contributors:** Read [`AGENTS.md`](./AGENTS.md) first for engineering rules, directory ownership, Git safety, and completion-report standards.
-
-All planning, architecture, interface contracts, and execution plans live inside [`docs/`](./docs/):
-
-1. [**Problem Statement & Scope**](./docs/problem-statement.md) — Official Track 1 goals, starter repo selection rationale, rules, and judging weights.
-2. [**System Architecture**](./docs/architecture.md) — End-to-end factory pipeline, 2-stage validation flow, 5-axis variation engine, database, and UI layout.
-3. [**Harbor Task Interface Contract**](./docs/TASK_INTERFACE.md) — Exact `harbor==0.25.*` directory layout, `task.toml`, `test.sh` reward formula, and Windows/Docker safety rules.
-4. [**MVP Features (P0)**](./docs/MVP_FEATURES.md) — Non-negotiable features required to pass automated judging before the 2 Dec AMA checkpoint.
-5. [**Good-to-Have Features (P1/P2)**](./docs/goodtohave.md) — Stretch enhancements (mutation automation, AI solver benchmarking, analytics) after MVP passes.
-6. [**Implementation Guide**](./docs/IMPLEMENTATION.md) — Tech stack, repo layout, Day-1 environment setup, module contracts, and API specs.
-7. [**Day-Wise Plan & Team Workflow**](./docs/day-wise-plan.md) — 25 Nov – 6 Dec sprint schedule, Git branching (`docs` $\rightarrow$ `main` $\rightarrow$ `dev` $\rightarrow$ `feat/*`), and 9 PM sync rules.
-8. [**Technical Explanation (Submission Template)**](./docs/TECHNICAL_EXPLANATION.md) — Living deliverable doc capturing design decisions, declared models/tools, and validation evidence.
+1. [Problem Statement & Scope](./docs/problem-statement.md) — official Track 1 rules and deliverables.
+2. [System Architecture](./docs/architecture.md) — v2 design, ADRs, threat model, concurrency, reproducibility, risks.
+3. [Harbor Task Interface Contract](./docs/TASK_INTERFACE.md) — package layout, fixed templates, reward rule, acceptance.
+4. [Implementation Guide](./docs/IMPLEMENTATION.md) — stack, ownership, schemas, signatures, config, API, testing.
+5. [MVP Features (P0)](./docs/MVP_FEATURES.md) and [Good-to-Have (P1/P2)](./docs/goodtohave.md).
+6. [Day-Wise Plan](./docs/day-wise-plan.md) — 27 Nov – 6 Dec per-member schedule, gates, cut lines, QA checklist.
+7. [Technical Explanation](./docs/TECHNICAL_EXPLANATION.md) — living submission document.
 
 ---
 
-## Quick Verification Targets (Once Implemented)
+## Key Dates
 
-```bash
-# 1. Verify prerequisites
-docker --version
-git --version
-harbor --version   # Must match 0.25.x
-
-# 2. Generate 5 Harbor task packages from pinned pallets/click commit
-python -m task_factory generate --repo pallets/click --count 5 --out ./artifacts/tasks
-
-# 3. Validate a generated task using Harbor CLI
-harbor run -p ./artifacts/tasks/<task-id> -a nop -k 1 -o ./artifacts/harbor_runs/nop --no-delete -y
-harbor run -p ./artifacts/tasks/<task-id> -a oracle -k 1 -o ./artifacts/harbor_runs/oracle --no-delete -y
-```
-
-> **Note:** Detailed setup instructions and pinned commit hashes will be locked in [`docs/IMPLEMENTATION.md`](./docs/IMPLEMENTATION.md) during Day 1 setup.
+AMA **2 Dec** · Submission **6 Dec 2026, 11:55 PM IST** (team target 18:00) · Screening 7–14 Dec · Demo Day 20 Dec · Finale 23 Dec.

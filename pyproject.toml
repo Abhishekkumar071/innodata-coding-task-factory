@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "innodata-task-factory"
+version = "0.1.0"
+description = "Automated Harbor 0.25.x feature-task factory for pallets/click (Innodata AI Hackathon 2026, Track 1)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.6",
+    "GitPython>=3.1",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "sqlalchemy>=2.0",
+    # Decision D1 (provisional): single LLM SDK.
+    "google-genai>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.5",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+task-factory = "task_factory.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["task_factory*", "backend*"]
+
+[tool.setuptools.package-data]
+task_factory = ["templates/harbor/*", "prompts/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# "fixtures" keeps tests/fixtures/sample_task/tests/test_feature_*.py (a Harbor payload) out of collection.
+norecursedirs = ["artifacts", ".cache", "_tmp_*", "frontend", "node_modules", "fixtures", ".venv"]
+markers = [
+    "docker: needs a Docker daemon",
+    "harbor: needs the harbor CLI",
+    "llm: needs a live LLM key",
+]
+addopts = "-m 'not docker and not harbor and not llm'"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["_tmp_*", ".cache", "artifacts", "frontend"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Fixed Harbor templates and fixture payloads are kept byte-identical to docs/TASK_INTERFACE.md.
+"task_factory/templates/**" = ["UP", "I", "E501"]
+"tests/fixtures/sample_task/**" = ["UP", "I", "E501"]

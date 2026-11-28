@@ -1,0 +1,23 @@
+# Line-ending policy (docs/architecture.md §13). Everything text is stored AND checked out as LF,
+# so Windows working copies never feed CRLF into Docker/bash/git apply.
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+Dockerfile text eol=lf
+
+# Patches must never be rewritten by Git.
+*.patch -text
+*.diff -text
+
+# Binary assets.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary

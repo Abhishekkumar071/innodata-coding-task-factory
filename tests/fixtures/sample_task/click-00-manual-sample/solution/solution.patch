@@ -1,0 +1,37 @@
+diff --git a/src/click/testing.py b/src/click/testing.py
+index 58696e9..3841d38 100644
+--- a/src/click/testing.py
++++ b/src/click/testing.py
+@@ -309,6 +309,32 @@ class Result:
+             "\r\n", "\n"
+         )
+ 
++    @staticmethod
++    def _split_lines(text: str) -> list[str]:
++        lines = text.split("\n")
++        if lines[-1] == "":
++            lines.pop()
++        return lines
++
++    @property
++    def output_lines(self) -> list[str]:
++        """The terminal output (:attr:`output`) as a list of lines.
++
++        Only ``\n`` separates lines and a final trailing newline does not
++        produce an extra empty item.
++        """
++        return self._split_lines(self.output)
++
++    @property
++    def stdout_lines(self) -> list[str]:
++        """The standard output (:attr:`stdout`) as a list of lines."""
++        return self._split_lines(self.stdout)
++
++    @property
++    def stderr_lines(self) -> list[str]:
++        """The standard error (:attr:`stderr`) as a list of lines."""
++        return self._split_lines(self.stderr)
++
+     def __repr__(self) -> str:
+         exc_str = repr(self.exception) if self.exception else "okay"
+         return f"<{type(self).__name__} {exc_str}>"
